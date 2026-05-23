@@ -19,4 +19,14 @@ class CardProfileCreate(BaseModel):
 
 class CheckInRequest(BaseModel):
     event_name: str
-    student_user_id: str  # 這是從學生的 QR Code 掃描出來的 user_id
+    student_user_id: str  # 這是從學生的 QR Code 掃描出來 of user_id
+
+class NewsCreate(BaseModel):
+    title: str
+    category: str
+    content: str
+
+class StoreCreate(BaseModel):
+    name: str
+    discount: str
+    icon: str

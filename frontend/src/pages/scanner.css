@@ -1,0 +1,11 @@
+.html5-qrcode-element {
+    padding: 6px 18px;
+    border: 1px solid #fff;
+    border-radius: 8px;
+    background-color: rgb(111, 131, 150);
+    font-weight: bold;
+    font-size: 12px;
+    color: white;
+
+    margin: 2px 0 5px 0;
+}

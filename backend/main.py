@@ -6,6 +6,7 @@ from core.database import supabase
 from api.auth import router as auth_router
 from api.card import router as card_router
 from api.event import router as event_router
+from api.content import router as content_router
 
 app = FastAPI(title="ICS Information Platform API")
 
@@ -21,6 +22,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/auth", tags=["身分驗證 (Auth)"])
 app.include_router(card_router, prefix="/api/card", tags=["數位系卡 (Card)"])
 app.include_router(event_router, prefix="/api/event", tags=["活動簽到 (Event)"])
+app.include_router(content_router, prefix="/api/content", tags=["內容管理 (Content)"])
 
 @app.get("/")
 def root():
