@@ -1,19 +1,14 @@
 # pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, HTTPException, status
 from api.schemas import NewsCreate, StoreCreate
-from api.deps import get_current_user
+from api.deps import get_current_user, require_manager_or_admin, require_admin_only
 from core.database import supabase
 
 router = APIRouter()
 
 def check_admin_or_manager(current_user: dict = Depends(get_current_user)):
     """驗證使用者角色是否為系統管理員或活動管理員"""
-    role = current_user.get("role")
-    if role not in ["Admin", "Manager"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="🔒 此操作僅限系統管理員或活動管理員使用！"
-        )
+    require_manager_or_admin(current_user.get("role"))
     return current_user
 
 @router.get("")
@@ -167,12 +162,7 @@ def delete_store(id: int, admin_user: dict = Depends(check_admin_or_manager)):
 
 def check_admin(current_user: dict = Depends(get_current_user)):
     """驗證使用者角色是否為最高權限系統管理員 Admin"""
-    role = current_user.get("role")
-    if role != "Admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="🔒 此操作僅限最高權限系統管理員 Admin 使用！"
-        )
+    require_admin_only(current_user.get("role"))
     return current_user
 
 @router.get("/users")
@@ -191,13 +181,18 @@ def get_all_users(admin_user: dict = Depends(check_admin)):
         for u in users:
             u_id = u["id"]
             if u_id in profiles:
-                u["card_profile"] = profiles[u_id]
+                profile_data = profiles[u_id]
+                # 為了前端相容性，動態映射 identity_type 欄位
+                identities = profile_data.get("identities", [])
+                profile_data["identity_type"] = identities[0] if identities else "Student"
+                u["card_profile"] = profile_data
             else:
                 u["card_profile"] = None
                 
         return users
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"獲取使用者與系卡列表失敗：{str(e)}")
+
 
 @router.put("/users/{user_id}/role")
 def update_user_role(user_id: str, payload: dict, admin_user: dict = Depends(check_admin)):
@@ -216,19 +211,24 @@ def update_user_role(user_id: str, payload: dict, admin_user: dict = Depends(che
         if new_role:
             supabase.table("users").update({"system_role": new_role}).eq("id", user_id).execute()
             
-        # 2. 更新或新建數位系卡身分 (identity_type)
+        # 2. 更新或新建數位系卡身分 (identities)
         if new_identity:
             # 檢查是否已建卡
             existing = supabase.table("card_profiles").select("*").eq("user_id", user_id).execute()
             if existing.data:
-                supabase.table("card_profiles").update({"identity_type": new_identity}).eq("user_id", user_id).execute()
+                # 更新為只含有該身分的陣列，確保原前端相容，後台也可進階修改
+                supabase.table("card_profiles").update({"identities": [new_identity]}).eq("user_id", user_id).execute()
             else:
                 # 該用戶尚未建立數位系卡，管理員直接為其代建初始檔案以配置身分組
                 new_profile = {
                     "user_id": user_id,
                     "name": "（管理員代建）",
                     "student_or_staff_id": "未填寫",
-                    "identity_type": new_identity,
+                    "identities": [new_identity],
+                    "degree_code": "A",
+                    "current_status": "Active",
+                    "class_generation": 111,
+                    "expected_graduation_year": 115,
                     "entry_year": 111
                 }
                 supabase.table("card_profiles").insert(new_profile).execute()
@@ -236,3 +236,4 @@ def update_user_role(user_id: str, payload: dict, admin_user: dict = Depends(che
         return {"message": "使用者權限組與數位系卡身分更新成功！"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更新失敗：{str(e)}")
+

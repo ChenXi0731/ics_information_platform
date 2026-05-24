@@ -9,7 +9,7 @@ export default function Home() {
     const [isLoading, setIsLoading] = useState(true);
     const [newsList, setNewsList] = useState([]);
     const [storeList, setStoreList] = useState([]);
-    
+
     const role = localStorage.getItem('icu_role');
     console.log("[DEBUG] Home page rendered. LocalStorage icu_role:", role);
 
@@ -88,7 +88,7 @@ export default function Home() {
                             </span>
                         )}
                     </div>
-                    
+
                     <div className="flex items-center space-x-4">
                         {/* Admin Backend Entry */}
                         {(role === 'Admin' || role === 'Manager') && (
@@ -141,9 +141,15 @@ export default function Home() {
                                 {hasCard ? `歡迎回來，${profile.name}！` : '歡迎來到世新資傳數位平台'}
                             </h1>
                             <p className="text-morandi-secondary mt-2 text-base max-w-xl">
-                                {hasCard 
-                                    ? `身分組別：${profile.identity_type} | 學號/工號：${profile.student_or_staff_id}。您已成功開通數位系卡，出示系卡即可享有特約商店優惠。`
+                                {hasCard
+                                    ? `身分組別：${profile.identity_type} | 學號/工號：${profile.student_or_staff_id}。`
                                     : '您目前尚未領取專屬數位系卡。領取系卡後可以進行活動簽到、取得專屬徽章及享有特約商店優惠！'}
+                                {hasCard
+                                    ? <br/>
+                                    : ''}
+                                {hasCard
+                                    ? `您已成功開通數位系卡，出示系卡即可享有特約商店優惠。`
+                                    : ''}
                             </p>
                         </div>
                         <div className="shrink-0 flex flex-wrap gap-4 w-full md:w-auto">
@@ -165,12 +171,12 @@ export default function Home() {
 
                             {(role === 'Admin' || role === 'Manager') && (
                                 <>
-                                    <button
+                                    {/* <button
                                         onClick={() => navigate('/admin')}
                                         className="px-6 py-3.5 bg-white border-2 border-morandi-accent text-morandi-accent rounded-xl font-bold shadow-sm hover:bg-morandi-bg active:scale-95 transition-all flex items-center justify-center gap-2 flex-1 md:flex-initial"
                                     >
                                         ⚙️ 後台管理
-                                    </button>
+                                    </button> */}
                                     <button
                                         onClick={handleScannerClick}
                                         className="px-6 py-3.5 bg-white border-2 border-morandi-primary text-morandi-primary rounded-xl font-bold shadow-sm hover:bg-morandi-bg active:scale-95 transition-all flex items-center justify-center gap-2 flex-1 md:flex-initial"
@@ -190,7 +196,7 @@ export default function Home() {
                         <div className="flex justify-between items-center mb-2">
                             <h2 className="text-2xl font-bold text-morandi-primary">📢 最新消息</h2>
                         </div>
-                        
+
                         <div className="space-y-4">
                             {newsList.map((news) => (
                                 <div key={news.id} className="glass hover:shadow-md transition-all duration-300 rounded-2xl p-6 border border-white/30">

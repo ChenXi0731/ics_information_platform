@@ -13,6 +13,8 @@ export default {
         'morandi-secondary': '#a79c93',
         'morandi-accent': '#8a9a86',
         'morandi-text': '#4b4e53',
+        "shu-primary": '#8a1538',
+        "shu-secondary": '#CB5077',
       }
     },
   },

@@ -53,16 +53,15 @@ export default function CardSetup() {
             {/* Top Navigation Bar */}
             <header className="w-full max-w-5xl mb-10 flex justify-between items-center py-4 px-6 bg-white/70 backdrop-blur-md rounded-2xl border border-white/20 shadow-sm shrink-0">
                 <div className="flex items-center space-x-3">
-                    <span className="text-lg sm:text-xl font-bold text-morandi-primary tracking-wider">世新資傳系卡</span>
-                </div>
-                <div className="flex items-center space-x-3">
                     <button
                         onClick={() => navigate('/home')}
                         className="px-4 py-2 border-2 border-morandi-primary/20 text-morandi-primary rounded-xl text-sm font-semibold hover:bg-morandi-primary/5 active:scale-95 transition-all flex items-center gap-1"
                     >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                         返回首頁
                     </button>
+                    <span className="text-lg sm:text-xl font-bold text-morandi-primary tracking-wider">世新資傳系卡</span>
+                </div>
+                <div className="flex items-center space-x-3">
                     <button
                         onClick={handleLogout}
                         className="px-4 py-2 border-2 border-morandi-secondary/20 text-morandi-text rounded-xl text-sm font-semibold hover:bg-red-50 hover:text-red-600 hover:border-red-100 active:scale-95 transition-all"

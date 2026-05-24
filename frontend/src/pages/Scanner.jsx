@@ -127,6 +127,12 @@ export default function Scanner() {
             {/* Top Navigation Bar */}
             <header className="w-full max-w-5xl mb-10 flex justify-between items-center py-4 px-6 bg-white/70 backdrop-blur-md rounded-2xl border border-white/20 shadow-sm">
                 <div className="flex items-center space-x-3">
+                    <button
+                        onClick={() => navigate('/home')}
+                        className="px-4 py-2 border-2 border-morandi-primary/20 text-morandi-primary rounded-xl text-sm font-semibold hover:bg-morandi-primary/5 active:scale-95 transition-all flex items-center gap-1"
+                    >
+                        返回首頁
+                    </button>
                     <span className="text-lg sm:text-xl font-bold text-morandi-primary tracking-wider">世新資傳系卡 - 簽到掃描</span>
                     {role && (
                         <span className="text-xs bg-morandi-primary/10 text-morandi-primary px-2.5 py-1 rounded-full font-semibold">
@@ -135,13 +141,6 @@ export default function Scanner() {
                     )}
                 </div>
                 <div className="flex items-center space-x-3">
-                    <button
-                        onClick={() => navigate('/home')}
-                        className="px-4 py-2 border-2 border-morandi-primary/20 text-morandi-primary rounded-xl text-sm font-semibold hover:bg-morandi-primary/5 active:scale-95 transition-all flex items-center gap-1"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                        返回首頁
-                    </button>
                     <button
                         onClick={() => navigate('/card')}
                         className="px-4 py-2 bg-morandi-primary text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-opacity-90 active:scale-95 transition-all flex items-center gap-1"
