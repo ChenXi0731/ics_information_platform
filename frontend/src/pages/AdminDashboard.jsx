@@ -62,7 +62,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Functions Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl flex-1 items-center pb-12">
+            <div className={`grid grid-cols-1 ${role === 'Admin' ? 'md:grid-cols-3 max-w-6xl' : 'md:grid-cols-2 max-w-4xl'} gap-8 w-full flex-1 items-center pb-12`}>
                 {/* News Portal Card */}
                 <div 
                     onClick={() => navigate('/admin/news')}
@@ -102,6 +102,28 @@ export default function AdminDashboard() {
                         <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                     </button>
                 </div>
+
+                {/* Users Permission Card (Admin-only) */}
+                {role === 'Admin' && (
+                    <div 
+                        onClick={() => navigate('/admin/users')}
+                        className="glass hover:shadow-xl transition-all duration-300 rounded-3xl p-8 sm:p-10 border border-white/40 cursor-pointer group hover:-translate-y-1.5 flex flex-col items-center text-center h-[22rem] justify-between"
+                    >
+                        <span className="text-6xl bg-white p-5 rounded-2xl shadow-sm group-hover:scale-110 transition-transform duration-300">👥</span>
+                        <div>
+                            <h2 className="text-2xl font-bold text-morandi-primary tracking-wide mt-4 mb-2 group-hover:text-morandi-accent transition-colors">
+                                使用者權限管理
+                            </h2>
+                            <p className="text-sm text-morandi-secondary leading-relaxed max-w-xs">
+                                管理平台註冊用戶的系統權限。安全升級或降級系統管理員、活動管理員及一般學生權限組。
+                            </p>
+                        </div>
+                        <button className="mt-4 px-6 py-2.5 bg-morandi-accent text-white rounded-xl text-sm font-bold shadow-md hover:bg-opacity-95 active:scale-95 transition-all flex items-center gap-1.5 bg-gradient-to-r from-morandi-primary to-morandi-accent">
+                            進入權限管理
+                            <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

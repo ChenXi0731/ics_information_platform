@@ -159,3 +159,44 @@ def delete_store(id: int, admin_user: dict = Depends(check_admin_or_manager)):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"刪除失敗：{str(e)}")
+
+
+# ==========================================
+# 👥 使用者權限後台管理端 API (GET, PUT)
+# ==========================================
+
+def check_admin(current_user: dict = Depends(get_current_user)):
+    """驗證使用者角色是否為最高權限系統管理員 Admin"""
+    role = current_user.get("role")
+    if role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="🔒 此操作僅限最高權限系統管理員 Admin 使用！"
+        )
+    return current_user
+
+@router.get("/users")
+def get_all_users(admin_user: dict = Depends(check_admin)):
+    """獲取平台所有註冊帳號列表"""
+    try:
+        res = supabase.table("users").select("id, email, system_role, created_at").order("created_at", desc=True).execute()
+        return res.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"獲取使用者列表失敗：{str(e)}")
+
+@router.put("/users/{user_id}/role")
+def update_user_role(user_id: str, payload: dict, admin_user: dict = Depends(check_admin)):
+    """編輯使用者的權限角色組"""
+    new_role = payload.get("system_role")
+    if new_role not in ["Admin", "Manager", "Contributor"]:
+        raise HTTPException(status_code=400, detail="無效的權限角色，必須為 'Admin', 'Manager' 或 'Contributor'")
+    
+    try:
+        res = supabase.table("users").update({"system_role": new_role}).eq("id", user_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="找不到指定的使用者，無法更新權限")
+        return {"message": "使用者權限更新成功！", "data": res.data[0]}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新權限失敗：{str(e)}")
