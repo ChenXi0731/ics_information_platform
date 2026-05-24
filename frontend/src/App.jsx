@@ -7,6 +7,7 @@ import Home from './pages/Home';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminNews from './pages/AdminNews';
 import AdminStores from './pages/AdminStores';
+import AdminUsers from './pages/AdminUsers';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/news" element={<AdminNews />} />
         <Route path="/admin/stores" element={<AdminStores />} />
+        <Route path="/admin/users" element={<AdminUsers />} />
       </Routes>
     </BrowserRouter>
   );

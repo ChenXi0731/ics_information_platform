@@ -177,26 +177,62 @@ def check_admin(current_user: dict = Depends(get_current_user)):
 
 @router.get("/users")
 def get_all_users(admin_user: dict = Depends(check_admin)):
-    """獲取平台所有註冊帳號列表"""
+    """獲取平台所有註冊帳號列表以及其對應的數位系卡身分"""
     try:
-        res = supabase.table("users").select("id, email, system_role, created_at").order("created_at", desc=True).execute()
-        return res.data
+        # 1. 獲取所有 users
+        users_res = supabase.table("users").select("id, email, system_role, created_at").order("created_at", desc=True).execute()
+        users = users_res.data or []
+        
+        # 2. 獲取所有 card_profiles
+        profiles_res = supabase.table("card_profiles").select("*").execute()
+        profiles = {p["user_id"]: p for p in (profiles_res.data or [])}
+        
+        # 3. 在記憶體中進行關聯合併
+        for u in users:
+            u_id = u["id"]
+            if u_id in profiles:
+                u["card_profile"] = profiles[u_id]
+            else:
+                u["card_profile"] = None
+                
+        return users
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"獲取使用者列表失敗：{str(e)}")
+        raise HTTPException(status_code=500, detail=f"獲取使用者與系卡列表失敗：{str(e)}")
 
 @router.put("/users/{user_id}/role")
 def update_user_role(user_id: str, payload: dict, admin_user: dict = Depends(check_admin)):
-    """編輯使用者的權限角色組"""
+    """編輯使用者的權限角色組與系卡身分組"""
     new_role = payload.get("system_role")
-    if new_role not in ["Admin", "Manager", "Contributor"]:
+    new_identity = payload.get("identity_type")
+    
+    if new_role and new_role not in ["Admin", "Manager", "Contributor"]:
         raise HTTPException(status_code=400, detail="無效的權限角色，必須為 'Admin', 'Manager' 或 'Contributor'")
+        
+    if new_identity and new_identity not in ["Student", "Faculty", "Alumni"]:
+        raise HTTPException(status_code=400, detail="無效的系卡身分，必須為 'Student', 'Faculty' 或 'Alumni'")
     
     try:
-        res = supabase.table("users").update({"system_role": new_role}).eq("id", user_id).execute()
-        if not res.data:
-            raise HTTPException(status_code=404, detail="找不到指定的使用者，無法更新權限")
-        return {"message": "使用者權限更新成功！", "data": res.data[0]}
-    except HTTPException as he:
-        raise he
+        # 1. 更新系統角色組 (system_role)
+        if new_role:
+            supabase.table("users").update({"system_role": new_role}).eq("id", user_id).execute()
+            
+        # 2. 更新或新建數位系卡身分 (identity_type)
+        if new_identity:
+            # 檢查是否已建卡
+            existing = supabase.table("card_profiles").select("*").eq("user_id", user_id).execute()
+            if existing.data:
+                supabase.table("card_profiles").update({"identity_type": new_identity}).eq("user_id", user_id).execute()
+            else:
+                # 該用戶尚未建立數位系卡，管理員直接為其代建初始檔案以配置身分組
+                new_profile = {
+                    "user_id": user_id,
+                    "name": "（管理員代建）",
+                    "student_or_staff_id": "未填寫",
+                    "identity_type": new_identity,
+                    "entry_year": 111
+                }
+                supabase.table("card_profiles").insert(new_profile).execute()
+                
+        return {"message": "使用者權限組與數位系卡身分更新成功！"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"更新權限失敗：{str(e)}")
+        raise HTTPException(status_code=500, detail=f"更新失敗：{str(e)}")
