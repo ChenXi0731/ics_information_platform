@@ -11,13 +11,17 @@ from api.content import router as content_router
 from api.admin import router as admin_router
 from api.deps import get_current_user, require_admin_only
 import os
+from core.utils import UPLOAD_DIR
 
 # 確保 uploads 目錄存在並掛載為靜態路由
-os.makedirs("uploads", exist_ok=True)
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except Exception as e:
+    print(f"無法建立 UPLOAD_DIR: {e}")
 
 app = FastAPI(title="ICS Information Platform API")
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # 允許前端 React 跨網域存取
 app.add_middleware(

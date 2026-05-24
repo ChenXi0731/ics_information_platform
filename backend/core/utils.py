@@ -32,3 +32,10 @@ def parse_student_id_details(student_id: str) -> tuple:
     expected_graduation_year = class_generation + duration
     
     return degree_code, class_generation, expected_graduation_year
+
+import os
+
+# 根據是否在 Vercel 環境中，決定 uploads 目錄的實體路徑以防止 Read-only filesystem 錯誤
+IS_VERCEL = os.environ.get("VERCEL") == "1"
+UPLOAD_DIR = "/tmp/uploads" if IS_VERCEL else "uploads"
+

@@ -108,10 +108,16 @@ def upload_enrollment_proof(
     if ext not in [".pdf", ".png", ".jpg", ".jpeg", ".heic"]:
         raise HTTPException(status_code=400, detail="不支援的檔案格式！僅限上傳 .pdf, .png, .jpg, .jpeg, .heic 格式檔案。")
         
+    from core.utils import UPLOAD_DIR
+    
     # 4. 保存實體檔案至 uploads 目錄
-    os.makedirs("uploads", exist_ok=True)
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"建立檔案儲存目錄失敗：{str(e)}")
+        
     save_filename = f"{user_id}_{academic_year}_{semester}{ext}"
-    file_path = os.path.join("uploads", save_filename)
+    file_path = os.path.join(UPLOAD_DIR, save_filename)
     
     try:
         with open(file_path, "wb") as buffer:
