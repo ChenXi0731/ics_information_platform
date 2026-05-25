@@ -32,16 +32,32 @@ export default function AdminUsers() {
 
     const getProofUrl = (url) => {
         if (!url) return '';
-        let targetUrl = url;
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-            const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-            const formattedBase = base.endsWith('/') ? base.slice(0, -1) : base;
-            const formattedUrl = url.startsWith('/') ? url : `/${url}`;
-            targetUrl = `${formattedBase}${formattedUrl}`;
+        // 完整的外部 URL（如 Supabase 公開儲存）直接回傳，不做任何修改
+        // 添加 cache buster 時間戳記會干擾 Supabase 的 URL 驗證機制
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            return url;
         }
-        // 🚀 雙重防護：加入時間戳記做為 Cache Buster，強制瀏覽器拉取雲端最新檔案
+        // 本地相對路徑：加上 API base URL
+        const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+        const formattedBase = base.endsWith('/') ? base.slice(0, -1) : base;
+        const formattedUrl = url.startsWith('/') ? url : `/${url}`;
+        const targetUrl = `${formattedBase}${formattedUrl}`;
+        // 本地檔案加上時間戳記防快取
         const separator = targetUrl.includes('?') ? '&' : '?';
         return `${targetUrl}${separator}t=${new Date().getTime()}`;
+    };
+
+    // 副檔名判斷輔助函式：不依賴 URL 結尾（防止 query params 干擾）
+    const getFileExt = (url) => {
+        if (!url) return '';
+        try {
+            const path = new URL(url).pathname;
+            return path.split('.').pop().toLowerCase();
+        } catch {
+            // 非標準 URL，用字串提取
+            const cleanUrl = url.split('?')[0];
+            return cleanUrl.split('.').pop().toLowerCase();
+        }
     };
 
     const fetchUsers = async () => {
@@ -585,8 +601,8 @@ export default function AdminUsers() {
                                 {alumniModalTargetUser.card_profile.enrollment_proof_url ? (
                                     (() => {
                                         const fileUrl = getProofUrl(alumniModalTargetUser.card_profile.enrollment_proof_url);
-                                        const rawUrl = alumniModalTargetUser.card_profile.enrollment_proof_url.toLowerCase();
-                                        if (rawUrl.endsWith('.pdf')) {
+                                        const fileExt = getFileExt(alumniModalTargetUser.card_profile.enrollment_proof_url);
+                                        if (fileExt === 'pdf') {
                                             return (
                                                 <div className="py-4">
                                                     <a href={fileUrl} target="_blank" rel="noopener noreferrer"
@@ -595,7 +611,7 @@ export default function AdminUsers() {
                                                     </a>
                                                 </div>
                                             );
-                                        } else if (rawUrl.endsWith('.heic')) {
+                                        } else if (fileExt === 'heic') {
                                             return (
                                                 <div className="py-4 flex flex-col items-center bg-white/70 p-6 rounded-2xl border border-morandi-secondary/20 shadow-sm text-center max-w-sm">
                                                     <span className="text-4xl mb-2">📱</span>
@@ -635,7 +651,7 @@ export default function AdminUsers() {
                                         await api.post(`/card/verify-and-extend/${alumniModalTargetUser.id}`, null, {
                                             params: { semester: 9, action: 'approve' }
                                         });
-                                        alert('🎉 系友身分審核通過！系友數位系卡已成功終身永久開通。');
+                                        // alert('🎉 系友身分審核通過！系友數位系卡已成功終身永久開通。');
                                         setShowAlumniModal(false);
                                         await fetchUsers();
                                     } catch (err) {
@@ -659,7 +675,7 @@ export default function AdminUsers() {
                                             await api.post(`/card/verify-and-extend/${alumniModalTargetUser.id}`, null, {
                                                 params: { semester: 9, action: 'reject' }
                                             });
-                                            alert('退件成功！已將該系友的申請標記為退件。');
+                                            // alert('退件成功！已將該系友的申請標記為退件。');
                                             setShowAlumniModal(false);
                                             await fetchUsers();
                                         } catch (err) {
@@ -736,9 +752,9 @@ export default function AdminUsers() {
                                 {modalTargetUser.card_profile.enrollment_proof_url ? (
                                     (() => {
                                         const fileUrl = getProofUrl(modalTargetUser.card_profile.enrollment_proof_url);
-                                        const rawUrl = modalTargetUser.card_profile.enrollment_proof_url.toLowerCase();
+                                        const fileExt = getFileExt(modalTargetUser.card_profile.enrollment_proof_url);
                                         
-                                        if (rawUrl.endsWith('.pdf')) {
+                                        if (fileExt === 'pdf') {
                                             return (
                                                 <div className="py-4">
                                                     <a
@@ -747,11 +763,11 @@ export default function AdminUsers() {
                                                         rel="noopener noreferrer"
                                                         className="px-6 py-3.5 bg-morandi-primary text-white rounded-xl text-xs font-bold hover:bg-opacity-95 shadow-md active:scale-95 transition-all flex items-center gap-1.5"
                                                     >
-                                                        📄 在新視窗中開啟 PDF 證明檔案
+                                                        在新視窗中開啟 PDF 證明檔案
                                                     </a>
                                                 </div>
                                             );
-                                        } else if (rawUrl.endsWith('.heic')) {
+                                        } else if (fileExt === 'heic') {
                                             return (
                                                 <div className="py-4 flex flex-col items-center bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-morandi-secondary/20 shadow-sm text-center max-w-sm">
                                                     <span className="text-4xl mb-2">📱</span>
@@ -824,9 +840,9 @@ export default function AdminUsers() {
                                                 action: 'approve'
                                             }
                                         });
-                                        alert(modalSemester === '9' 
-                                            ? '🎉 核准審核成功！該系友數位系卡已順利終身永久開通。' 
-                                            : '🎉 核准審核成功！學生數位系卡已順利展延。');
+                                        // alert(modalSemester === '9' 
+                                        //     ? '🎉 核准審核成功！該系友數位系卡已順利終身永久開通。' 
+                                        //     : '🎉 核准審核成功！學生數位系卡已順利展延。');
                                         setShowExtendModal(false);
                                         await fetchUsers();
                                     } catch (err) {
@@ -853,7 +869,7 @@ export default function AdminUsers() {
                                                     action: 'reject'
                                                 }
                                             });
-                                            alert('退件成功！已將該學生的在校證明標記為退件。');
+                                            // alert('退件成功！已將該學生的在校證明標記為退件。');
                                             setShowExtendModal(false);
                                             await fetchUsers();
                                         } catch (err) {

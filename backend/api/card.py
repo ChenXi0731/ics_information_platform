@@ -217,10 +217,12 @@ def upload_enrollment_proof(
             file_options={"content-type": file.content_type, "x-upsert": "true"}
         )
         
-        signed_url_res = supabase.storage.from_(bucket_name).create_signed_url(save_filename, 315360000)
-        public_url = signed_url_res.get("signedURL") or signed_url_res.get("signedUrl")
+        # 🚀 使用 get_public_url 取代 create_signed_url：
+        # Bucket 已設為 public，直接取用永久公開 URL，不需 signed token。
+        # 此方法不受 Supabase SDK v2 signed URL 組合 bug 影響，URL 格式穩定可靠。
+        public_url = supabase.storage.from_(bucket_name).get_public_url(save_filename)
         if not public_url:
-            raise Exception("未能產生有效的 Signed URL")
+            raise Exception("未能產生有效的公開 URL")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"雲端證明儲存失敗：{str(e)}")
         
