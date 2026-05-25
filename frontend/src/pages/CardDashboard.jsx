@@ -9,11 +9,25 @@ export default function CardDashboard() {
     const [profile, setProfile] = useState(null);
     const [isFlipped, setIsFlipped] = useState(false);
     
+    // 🚀 行政學年學期自動計算函數 (2/1~7/31 為rocYear-1年下學期)
+    const getAutoAcademicPeriod = () => {
+        const now = new Date();
+        const rocYear = now.getFullYear() - 1911;
+        const month = now.getMonth() + 1;
+        if (month >= 2 && month <= 7) {
+            return { year: String(rocYear - 1), semester: '2' };
+        } else {
+            const allowedYear = month === 1 ? rocYear - 1 : rocYear;
+            return { year: String(allowedYear), semester: '1' };
+        }
+    };
+    const autoPeriod = getAutoAcademicPeriod();
+
     // 新增狀態支援多重身份與在校認證上傳
     const [activeIdentity, setActiveIdentity] = useState('Student');
     const [proofFile, setProofFile] = useState(null);
-    const [uploadYear, setUploadYear] = useState('114');
-    const [uploadSemester, setUploadSemester] = useState('2');
+    const [uploadYear, setUploadYear] = useState(autoPeriod.year);
+    const [uploadSemester, setUploadSemester] = useState(autoPeriod.semester);
     const [uploadLoading, setUploadLoading] = useState(false);
 
     const role = localStorage.getItem('icu_role');
@@ -28,9 +42,17 @@ export default function CardDashboard() {
         const fetchProfile = async () => {
             try {
                 const response = await api.get('/card/me');
-                setProfile(response.data);
-                const identities = response.data.identities || ['Student'];
-                setActiveIdentity(identities[0]);
+                const data = response.data;
+                setProfile(data);
+                const identities = data.identities || ['Student'];
+                
+                // 🚀 自動畢業偵測切換：若預計畢業學年已到，預設卡面切換至系友卡
+                const rocYear = new Date().getFullYear() - 1911;
+                if (data.expected_graduation_year && data.expected_graduation_year <= rocYear && identities.includes('Alumni')) {
+                    setActiveIdentity('Alumni');
+                } else {
+                    setActiveIdentity(identities[0]);
+                }
             } catch (error) {
                 if (error.response?.status === 404) {
                     navigate('/setup');
@@ -385,28 +407,14 @@ export default function CardDashboard() {
                                         </p>
                                         
                                         {activeIdentity === 'Student' && (
-                                            <div className="grid grid-cols-2 gap-3 mb-3">
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-morandi-secondary mb-1">學年度 (民國)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={uploadYear}
-                                                        onChange={(e) => setUploadYear(e.target.value)}
-                                                        className="w-full px-2.5 py-1.5 text-xs bg-white/70 border border-morandi-secondary/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-morandi-accent shadow-sm"
-                                                        placeholder="e.g. 111"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-morandi-secondary mb-1">學期</label>
-                                                    <select
-                                                        value={uploadSemester}
-                                                        onChange={(e) => setUploadSemester(e.target.value)}
-                                                        className="w-full px-2.5 py-1.5 text-xs bg-white/70 border border-morandi-secondary/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-morandi-accent shadow-sm font-semibold"
-                                                    >
-                                                        <option value="1">上學期</option>
-                                                        <option value="2">下學期</option>
-                                                    </select>
-                                                </div>
+                                            <div className="bg-morandi-bg/85 border border-morandi-accent/20 px-4 py-3.5 rounded-2xl mb-4 shadow-sm text-center animate-fade-in">
+                                                <p className="text-[10px] font-bold text-morandi-accent uppercase tracking-widest">當期合規申報學期</p>
+                                                <p className="text-sm font-bold text-morandi-primary mt-1 font-mono">
+                                                    民國 {uploadYear} 學年度 - 第 {uploadSemester} 學期
+                                                </p>
+                                                <p className="text-[9px] text-morandi-secondary mt-1">
+                                                    (系統已依行政時間自動鎖定申報期間，防止不實申報)
+                                                </p>
                                             </div>
                                         )}
                                         

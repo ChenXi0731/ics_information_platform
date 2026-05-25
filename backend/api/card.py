@@ -81,6 +81,17 @@ def get_my_card(current_user: dict = Depends(get_current_user)):
     card_data = profile_res.data[0]
     card_data["badges"] = badges_res.data
     
+    # 🚀 動態畢業身份升級：若已超過預計畢業年度且身分含 Student，自動追加 Alumni 身分供前端切換
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    current_academic_year = now.year - 1911
+    
+    identities = card_data.get("identities", [])
+    expected_grad = card_data.get("expected_graduation_year", 999)
+    if "Student" in identities and expected_grad <= current_academic_year:
+        if "Alumni" not in identities:
+            card_data["identities"] = list(set(identities + ["Alumni"]))
+            
     return card_data
 
 @router.post("/upload-enrollment-proof")
@@ -103,14 +114,25 @@ def upload_enrollment_proof(
     
     profile = existing.data[0]
     
-    # 2. 阻擋安全防偽防禦
-    class_generation = profile.get("class_generation", 111)
-    expected_graduation_year = profile.get("expected_graduation_year", 115)
-    
-    if academic_year < class_generation:
-        raise HTTPException(status_code=400, detail=f"申報學年度不合理：不得小於您的入學學級 ({class_generation}級)。")
-    if academic_year > expected_graduation_year + 2:
-        raise HTTPException(status_code=400, detail=f"申報學年度不合理：已超出您的預計畢業學年限。")
+    # 2. 阻擋安全防偽防禦 (學生強校驗：只允許申請當前行政學期之認證；系友特規 academic_year=999)
+    if academic_year != 999 or semester != 9:
+        from datetime import datetime, timezone
+        now_dt = datetime.now(timezone.utc)
+        roc_year = now_dt.year - 1911
+        
+        # 依世新學期行政區間自動判定唯一的合法申報時間 (下學期 2/1~7/31 申報 ROC_year - 1)
+        if 2 <= now_dt.month <= 7:
+            allowed_year = roc_year - 1
+            allowed_semester = 2
+        else:
+            allowed_year = roc_year - 1 if now_dt.month == 1 else roc_year
+            allowed_semester = 1
+            
+        if academic_year != allowed_year or semester != allowed_semester:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"申報學期不合規！當前行政時間僅允許申報 {allowed_year} 學年度第 {allowed_semester} 學期。"
+            )
     
     # 3. 檢查副檔名
     filename = file.filename
@@ -148,8 +170,11 @@ def upload_enrollment_proof(
             file_options={"content-type": file.content_type, "x-upsert": "true"}
         )
         
-        # 取得該檔案的 Supabase 全球公開訪問 URL
-        public_url = supabase.storage.from_(bucket_name).get_public_url(save_filename)
+        # 🚀 升級方案：取得 10 年超長效 Signed URL，100% 繞過 Storage RLS 權限與 Public 開關不全的存取障礙，保證秒開預覽！
+        signed_url_res = supabase.storage.from_(bucket_name).create_signed_url(save_filename, 315360000)
+        public_url = signed_url_res.get("signedURL") or signed_url_res.get("signedUrl")
+        if not public_url:
+            raise Exception("未能產生有效的 Signed URL，請確認 Storage 權限。")
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"雲端在學證明儲存失敗，請確認 Supabase Storage 是否配置：{str(e)}")
@@ -208,6 +233,17 @@ def verify_and_extend_card(
         "verification_status": "Approved",
         "last_verified_at": now.isoformat()
     }
+    
+    # 🚀 若審核核准為系友身份 (semester=9)，確保 identities 陣列中包含 Alumni 並作為其身份組一部分寫回資料庫！
+    if semester == 9:
+        try:
+            profile_res = supabase.table("card_profiles").select("identities").eq("user_id", target_user_id).execute()
+            curr_identities = profile_res.data[0].get("identities", []) if profile_res.data else []
+            # 確保 Alumni 在陣列中
+            new_identities = list(set(curr_identities + ["Alumni"]))
+            update_data["identities"] = new_identities
+        except Exception as e:
+            print(f"自動寫回 Alumni 身份失敗：{e}")
     
     try:
         supabase.table("card_profiles").update(update_data).eq("user_id", target_user_id).execute()
