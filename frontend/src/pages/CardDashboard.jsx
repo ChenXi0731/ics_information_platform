@@ -12,8 +12,8 @@ export default function CardDashboard() {
     // 新增狀態支援多重身份與在校認證上傳
     const [activeIdentity, setActiveIdentity] = useState('Student');
     const [proofFile, setProofFile] = useState(null);
-    const [uploadYear, setUploadYear] = useState('115');
-    const [uploadSemester, setUploadSemester] = useState('1');
+    const [uploadYear, setUploadYear] = useState('114');
+    const [uploadSemester, setUploadSemester] = useState('2');
     const [uploadLoading, setUploadLoading] = useState(false);
 
     const role = localStorage.getItem('icu_role');
@@ -359,7 +359,7 @@ export default function CardDashboard() {
                                                     value={uploadYear}
                                                     onChange={(e) => setUploadYear(e.target.value)}
                                                     className="w-full px-2.5 py-1.5 text-xs bg-white/70 border border-morandi-secondary/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-morandi-accent shadow-sm"
-                                                    placeholder="如 115"
+                                                    placeholder="e.g. 111"
                                                 />
                                             </div>
                                             <div>

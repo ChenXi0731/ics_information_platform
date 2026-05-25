@@ -108,26 +108,42 @@ def upload_enrollment_proof(
     if ext not in [".pdf", ".png", ".jpg", ".jpeg", ".heic"]:
         raise HTTPException(status_code=400, detail="不支援的檔案格式！僅限上傳 .pdf, .png, .jpg, .jpeg, .heic 格式檔案。")
         
-    from core.utils import UPLOAD_DIR
-    
-    # 4. 保存實體檔案至 uploads 目錄
-    try:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"建立檔案儲存目錄失敗：{str(e)}")
-        
+    # 4. 上傳實體檔案至 Supabase Storage 雲端空間 (防止 Vercel Serverless 無狀態唯讀檔案系統限制)
+    bucket_name = "enrollment-proofs"
     save_filename = f"{user_id}_{academic_year}_{semester}{ext}"
-    file_path = os.path.join(UPLOAD_DIR, save_filename)
     
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"檔案儲存失敗：{str(e)}")
+        # 讀取檔案內容為 bytes
+        file_content = file.file.read()
         
-    # 5. 更新 Supabase
+        # 嘗試在 Supabase 中自動建立 enrollment-proofs 公開 bucket
+        try:
+            supabase.storage.create_bucket(bucket_name, options={"public": True})
+        except Exception:
+            pass
+            
+        # 為了避免 upsert 時發生重名衝突，先進行刪除 (如果存在) 再行上傳
+        try:
+            supabase.storage.from_(bucket_name).remove([save_filename])
+        except Exception:
+            pass
+            
+        # 執行上傳
+        supabase.storage.from_(bucket_name).upload(
+            path=save_filename,
+            file=file_content,
+            file_options={"content-type": file.content_type, "x-upsert": "true"}
+        )
+        
+        # 取得該檔案的 Supabase 全球公開訪問 URL
+        public_url = supabase.storage.from_(bucket_name).get_public_url(save_filename)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"雲端在學證明儲存失敗，請確認 Supabase Storage 是否配置：{str(e)}")
+        
+    # 5. 更新 Supabase 資料表，將 URL 指向雲端 Public URL
     update_data = {
-        "enrollment_proof_url": f"/uploads/{save_filename}",
+        "enrollment_proof_url": public_url,
         "proof_academic_year": academic_year,
         "proof_semester": semester,
         "verification_status": "Pending"
@@ -163,12 +179,12 @@ def verify_and_extend_card(
             
     now = datetime.now(timezone.utc)
     
-    # 計算展延過期時間（上學期有效至隔年 2/15，下學期有效至當年 9/15）
+    # 計算展延過期時間（上學期有效至隔年 1/31，下學期有效至當年 7/31）
     if semester == 1:
         next_year = now.year + 1 if now.month >= 8 else now.year
-        valid_date = datetime(next_year, 2, 15, 23, 59, 59, tzinfo=timezone.utc)
+        valid_date = datetime(next_year, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
     else:
-        valid_date = datetime(now.year, 9, 15, 23, 59, 59, tzinfo=timezone.utc)
+        valid_date = datetime(now.year, 7, 31, 23, 59, 59, tzinfo=timezone.utc)
         
     update_data = {
         "valid_until": valid_date.isoformat(),

@@ -26,6 +26,17 @@ export default function AdminUsers() {
     const [modalActionLoading, setModalActionLoading] = useState(false);
 
 
+    const getProofUrl = (url) => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            return url;
+        }
+        const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+        const formattedBase = base.endsWith('/') ? base.slice(0, -1) : base;
+        const formattedUrl = url.startsWith('/') ? url : `/${url}`;
+        return `${formattedBase}${formattedUrl}`;
+    };
+
     const fetchUsers = async () => {
         setIsLoading(true);
         try {
@@ -398,7 +409,7 @@ export default function AdminUsers() {
                                                                     {(() => {
                                                                         const cp = user.card_profile;
                                                                         const isExpired = cp.current_status === 'Suspended' || (cp.valid_until && new Date() > new Date(cp.valid_until)) || !cp.valid_until;
-                                                                        const isPending = cp.verification_status === 'Pending';
+                                                                        const isPending = cp.verification_status === 'Pending' && cp.enrollment_proof_url;
                                                                         const isRejected = cp.verification_status === 'Rejected';
                                                                         
                                                                         return (
@@ -524,30 +535,58 @@ export default function AdminUsers() {
                             <div className="border border-morandi-secondary/20 rounded-2xl p-4 bg-morandi-bg/30 flex flex-col items-center shadow-inner">
                                 <p className="text-xs font-bold text-morandi-secondary mb-3">上傳之在學證明檔案預覽</p>
                                 {modalTargetUser.card_profile.enrollment_proof_url ? (
-                                    modalTargetUser.card_profile.enrollment_proof_url.toLowerCase().endsWith('.pdf') ? (
-                                        <div className="py-4">
-                                            <a
-                                                href={`http://localhost:8000${modalTargetUser.card_profile.enrollment_proof_url}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="px-6 py-3.5 bg-morandi-primary text-white rounded-xl text-xs font-bold hover:bg-opacity-95 shadow-md active:scale-95 transition-all flex items-center gap-1.5"
-                                            >
-                                                📄 在新視窗中開啟 PDF 證明檔案
-                                            </a>
-                                        </div>
-                                    ) : (
-                                        <div className="w-full max-h-64 overflow-y-auto rounded-xl border border-morandi-secondary/15 bg-white flex justify-center p-2 shadow-inner">
-                                            <img
-                                                src={`http://localhost:8000${modalTargetUser.card_profile.enrollment_proof_url}`}
-                                                alt="在學證明"
-                                                className="max-w-full h-auto object-contain rounded-lg"
-                                                onError={(e) => {
-                                                    e.target.onerror = null;
-                                                    e.target.src = "https://placehold.co/400x300?text=檔案讀取中或為.heic格式檔案，請點擊右鍵下載或於後端查看";
-                                                }}
-                                            />
-                                        </div>
-                                    )
+                                    (() => {
+                                        const fileUrl = getProofUrl(modalTargetUser.card_profile.enrollment_proof_url);
+                                        const lowerUrl = fileUrl.toLowerCase();
+                                        
+                                        if (lowerUrl.endsWith('.pdf')) {
+                                            return (
+                                                <div className="py-4">
+                                                    <a
+                                                        href={fileUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-6 py-3.5 bg-morandi-primary text-white rounded-xl text-xs font-bold hover:bg-opacity-95 shadow-md active:scale-95 transition-all flex items-center gap-1.5"
+                                                    >
+                                                        📄 在新視窗中開啟 PDF 證明檔案
+                                                    </a>
+                                                </div>
+                                            );
+                                        } else if (lowerUrl.endsWith('.heic')) {
+                                            return (
+                                                <div className="py-4 flex flex-col items-center bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-morandi-secondary/20 shadow-sm text-center max-w-sm">
+                                                    <span className="text-4xl mb-2">📱</span>
+                                                    <h4 className="text-sm font-bold text-morandi-primary">iOS 專用 HEIC 證明文件</h4>
+                                                    <p className="text-[11px] text-morandi-secondary mt-1.5 mb-4 leading-relaxed">
+                                                        此文件為 Apple 特有的高畫質圖片格式，瀏覽器無法直接在網頁中渲染。請點選下方按鈕下載或在新分頁中直接檢視檔案。
+                                                    </p>
+                                                    <a
+                                                        href={fileUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        download
+                                                        className="px-5 py-2.5 bg-morandi-accent text-white rounded-xl text-xs font-bold hover:bg-opacity-90 shadow-md active:scale-95 transition-all flex items-center gap-1"
+                                                    >
+                                                        📥 下載 / 開啟 HEIC 證明檔案
+                                                    </a>
+                                                </div>
+                                            );
+                                        } else {
+                                            return (
+                                                <div className="w-full max-h-64 overflow-y-auto rounded-xl border border-morandi-secondary/15 bg-white flex justify-center p-2 shadow-inner">
+                                                    <img
+                                                        src={fileUrl}
+                                                        alt="在學證明"
+                                                        className="max-w-full h-auto object-contain rounded-lg"
+                                                        onError={(e) => {
+                                                            e.target.onerror = null;
+                                                            e.target.src = "https://placehold.co/400x300?text=檔案格式暫不支援直接預覽，請嘗試下載查看";
+                                                        }}
+                                                    />
+                                                </div>
+                                            );
+                                        }
+                                    })()
                                 ) : (
                                     <p className="text-xs text-morandi-secondary italic py-8">該學生尚未上傳在校證明檔案</p>
                                 )}
