@@ -540,9 +540,9 @@ export default function AdminUsers() {
                                 {modalTargetUser.card_profile.enrollment_proof_url ? (
                                     (() => {
                                         const fileUrl = getProofUrl(modalTargetUser.card_profile.enrollment_proof_url);
-                                        const lowerUrl = fileUrl.toLowerCase();
+                                        const rawUrl = modalTargetUser.card_profile.enrollment_proof_url.toLowerCase();
                                         
-                                        if (lowerUrl.endsWith('.pdf')) {
+                                        if (rawUrl.endsWith('.pdf')) {
                                             return (
                                                 <div className="py-4">
                                                     <a
@@ -555,7 +555,7 @@ export default function AdminUsers() {
                                                     </a>
                                                 </div>
                                             );
-                                        } else if (lowerUrl.endsWith('.heic')) {
+                                        } else if (rawUrl.endsWith('.heic')) {
                                             return (
                                                 <div className="py-4 flex flex-col items-center bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-morandi-secondary/20 shadow-sm text-center max-w-sm">
                                                     <span className="text-4xl mb-2">📱</span>
