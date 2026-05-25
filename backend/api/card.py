@@ -108,9 +108,12 @@ def upload_enrollment_proof(
     if ext not in [".pdf", ".png", ".jpg", ".jpeg", ".heic"]:
         raise HTTPException(status_code=400, detail="不支援的檔案格式！僅限上傳 .pdf, .png, .jpg, .jpeg, .heic 格式檔案。")
         
+    import uuid
     # 4. 上傳實體檔案至 Supabase Storage 雲端空間 (防止 Vercel Serverless 無狀態唯讀檔案系統限制)
     bucket_name = "enrollment-proofs"
-    save_filename = f"{user_id}_{academic_year}_{semester}{ext}"
+    # 生成帶有隨機短碼的全新檔名，確保每次重新上傳，網址都會完全不同，徹底粉碎瀏覽器快取殘留！
+    random_suffix = uuid.uuid4().hex[:8]
+    save_filename = f"{user_id}_{academic_year}_{semester}_{random_suffix}{ext}"
     
     try:
         # 讀取檔案內容為 bytes

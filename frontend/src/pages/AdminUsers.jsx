@@ -28,13 +28,16 @@ export default function AdminUsers() {
 
     const getProofUrl = (url) => {
         if (!url) return '';
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-            return url;
+        let targetUrl = url;
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+            const formattedBase = base.endsWith('/') ? base.slice(0, -1) : base;
+            const formattedUrl = url.startsWith('/') ? url : `/${url}`;
+            targetUrl = `${formattedBase}${formattedUrl}`;
         }
-        const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-        const formattedBase = base.endsWith('/') ? base.slice(0, -1) : base;
-        const formattedUrl = url.startsWith('/') ? url : `/${url}`;
-        return `${formattedBase}${formattedUrl}`;
+        // 🚀 雙重防護：加入時間戳記做為 Cache Buster，強制瀏覽器拉取雲端最新檔案
+        const separator = targetUrl.includes('?') ? '&' : '?';
+        return `${targetUrl}${separator}t=${new Date().getTime()}`;
     };
 
     const fetchUsers = async () => {
