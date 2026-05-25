@@ -48,7 +48,7 @@ def trigger_graduation_detect(current_user: dict = Depends(get_current_user)):
     """
     【僅限系統管理員 Admin 可觸發】
     每年 8 月 31 日執行自動畢業偵測排程
-    對應 expected_graduation_year <= 當前學年度之在校生，自動在 identities 追加 'Alumni'
+    對應 expected_graduation_year <= 當前學年度之在校生，實施身分完全替換與卡面凍結
     """
     require_admin_only(current_user.get("role"))
     
@@ -59,7 +59,7 @@ def trigger_graduation_detect(current_user: dict = Depends(get_current_user)):
     current_academic_year = now.year - 1911
     
     try:
-        # 獲取所有處於 Active 狀態的卡片
+        # 依需求說明書：只有當符合畢業年限且目前 current_status = 'Active'（在學非休學）的學生才進行自動轉換
         profiles_res = supabase.table("card_profiles").select("*").eq("current_status", "Active").execute()
         profiles = profiles_res.data or []
         
@@ -68,18 +68,31 @@ def trigger_graduation_detect(current_user: dict = Depends(get_current_user)):
             identities = p.get("identities", [])
             expected_graduation = p.get("expected_graduation_year", 999)
             
+            # 當偵測到需要畢業的 Student 身分時
             if "Student" in identities and expected_graduation <= current_academic_year:
-                if "Alumni" not in identities:
-                    # 追加 Alumni 到 identities 陣列
-                    new_identities = list(set(identities + ["Alumni"]))
-                    supabase.table("card_profiles").update({
-                        "identities": new_identities
-                    }).eq("user_id", p["user_id"]).execute()
-                    updated_count += 1
+                # 🚀 核心改造：不再追加，而是「完全替換」身份！
+                # 移除 identities 陣列中的 'Student' 標籤，並確保塞入 'Alumni'
+                clean_identities = [i for i in identities if i != "Student"]
+                if "Alumni" not in clean_identities:
+                    clean_identities.append("Alumni")
+                
+                # 🚀 同步更新狀態鏈：
+                # 1. 變更 identities 為過濾後的純系友陣列
+                # 2. 將 current_status 改為 'Graduated' (已畢業)
+                # 3. 將 valid_until 設為西元 9999 年底（象徵系友卡終身永久有效）
+                valid_date = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+                
+                supabase.table("card_profiles").update({
+                    "identities": clean_identities,
+                    "current_status": "Graduated",
+                    "valid_until": valid_date.isoformat()
+                }).eq("user_id", p["user_id"]).execute()
+                
+                updated_count += 1
                     
         return {
             "status": "success",
-            "message": f"畢業偵測與標籤自動化程序完成！共將 {updated_count} 位學生的身分追加了 'Alumni' 標籤。",
+            "message": f"自動化畢業身份流轉程序完成！共將 {updated_count} 位學生的身份成功從 'Student' 安全移轉為 'Alumni'，並將卡片修正為永久系友卡。",
             "current_academic_year": current_academic_year
         }
     except Exception as e:

@@ -4,10 +4,16 @@ from api.schemas import CardProfileCreate
 from api.deps import get_current_user, require_manager_or_admin
 from core.database import supabase
 import os
-import shutil
 from datetime import datetime, timezone
 
 router = APIRouter()
+
+def get_current_taiwan_academic_year() -> int:
+    """計算當前行政時間對應的台灣民國學年度"""
+    now_dt = datetime.now(timezone.utc)
+    roc_year = now_dt.year - 1911
+    # 依世新大學行政慣例：1月至7月屬於前一年的學年度（例如 2026年5月為 114學年度第2學期）
+    return roc_year - 1 if 1 <= now_dt.month <= 7 else roc_year
 
 @router.post("/setup", status_code=status.HTTP_201_CREATED)
 def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_current_user)):
@@ -18,7 +24,7 @@ def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_curr
     if len(existing.data) > 0:
         raise HTTPException(status_code=400, detail="您的系卡已經建立過了！")
     
-    # 2. 準備寫入資料 (將單一 identity_type 轉換為 identities 陣列並進行學號解析)
+    # 2. 準備寫入資料
     raw_data = profile.model_dump()
     identity = raw_data.pop("identity_type", "Student")
     
@@ -26,13 +32,10 @@ def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_curr
         "user_id": user_id,
         "name": raw_data["name"],
         "student_or_staff_id": raw_data["student_or_staff_id"],
-        "identities": [identity],
         "entry_year": raw_data["entry_year"]
     }
     
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    current_academic_year = now.year - 1911 # 轉換為當前民國年份學年度
+    current_academic_year = get_current_taiwan_academic_year()
     
     if identity == "Student":
         try:
@@ -41,18 +44,21 @@ def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_curr
             new_profile["degree_code"] = degree_code
             new_profile["class_generation"] = class_generation
             new_profile["expected_graduation_year"] = expected_graduation_year
-            new_profile["current_status"] = "Active"
             
-            # 🚀 自動畢業與系友判斷：若預計畢業學年 <= 當前學年度，自動追加 Alumni 身份，達成身分重疊！
+            # 🚀 修正邏輯：若預計畢業學年 <= 當前學年度，初始建卡即視為 Alumni，狀態為 Graduated，不允許重疊
             if expected_graduation_year <= current_academic_year:
-                new_profile["identities"] = ["Student", "Alumni"]
+                new_profile["identities"] = ["Alumni"]
+                new_profile["current_status"] = "Graduated"
+                new_profile["valid_until"] = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).isoformat()
             else:
                 new_profile["identities"] = ["Student"]
+                new_profile["current_status"] = "Active"
         except ValueError as ve:
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"學號自動解析失敗：{str(e)}")
     else:
+        new_profile["identities"] = [identity]
         new_profile["degree_code"] = "A"
         new_profile["class_generation"] = raw_data["entry_year"]
         new_profile["expected_graduation_year"] = raw_data["entry_year"] + 4
@@ -69,30 +75,40 @@ def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_curr
 def get_my_card(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     
-    # 1. 獲取系卡基本資料
     profile_res = supabase.table("card_profiles").select("*").eq("user_id", user_id).execute()
     if not profile_res.data:
         raise HTTPException(status_code=404, detail="尚未建立系卡資料，請先前往設定")
         
-    # 2. 獲取動態組織徽章 (Badges)
     badges_res = supabase.table("org_badges").select("*").eq("user_id", user_id).execute()
     
-    # 3. 合併資料回傳
     card_data = profile_res.data[0]
     card_data["badges"] = badges_res.data
     
-    # 🚀 動態畢業身份升級：若已超過預計畢業年度且身分含 Student，自動追加 Alumni 身分供前端切換
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    current_academic_year = now.year - 1911
+    current_academic_year = get_current_taiwan_academic_year()
     
     identities = card_data.get("identities", [])
     expected_grad = card_data.get("expected_graduation_year", 999)
+    
+    # 🚀 動態修復歷史與髒資料：若已超過預計畢業年度且身分含有 Student，立刻將其「替換」為 Alumni 並移除 Student
     if "Student" in identities and expected_grad <= current_academic_year:
-        if "Alumni" not in identities:
-            card_data["identities"] = list(set(identities + ["Alumni"]))
+        clean_identities = [i for i in identities if i != "Student"]
+        if "Alumni" not in clean_identities:
+            clean_identities.append("Alumni")
+        
+        card_data["identities"] = clean_identities
+        card_data["current_status"] = "Graduated"
+        
+        # 同步回寫資料庫修正錯誤，達成一勞永逸的資料清洗
+        try:
+            supabase.table("card_profiles").update({
+                "identities": clean_identities,
+                "current_status": "Graduated"
+            }).eq("user_id", user_id).execute()
+        except Exception:
+            pass
             
     return card_data
+
 
 @router.post("/upload-enrollment-proof")
 def upload_enrollment_proof(
@@ -102,25 +118,31 @@ def upload_enrollment_proof(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    【一般用戶 Contributor 可執行】
-    學生端：上傳世新大學在學證明 PDF 或截圖 (PNG, JPG, JPEG, HEIC)
+    學生端/系友端：提交在校認證或系友開通申請
     """
     user_id = current_user["user_id"]
     
-    # 1. 檢查是否已建卡
     existing = supabase.table("card_profiles").select("*").eq("user_id", user_id).execute()
     if not existing.data:
-        raise HTTPException(status_code=404, detail="尚未建立數位系卡，無法上傳在學證明。")
+        raise HTTPException(status_code=404, detail="尚未建立數位系卡，無法上傳驗證證明。")
     
     profile = existing.data[0]
+    expected_grad = profile.get("expected_graduation_year", 999)
+    current_academic_year = get_current_taiwan_academic_year()
     
-    # 2. 阻擋安全防偽防禦 (學生強校驗：只允許申請當前行政學期之認證；系友特規 academic_year=999)
+    # 🚀 核心安全防錯：攔截「本應為系友卻選錯申請普通學生驗證」的不合理行為
+    if expected_grad <= current_academic_year:
+        if academic_year != 999 or semester != 9:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"申報不合邏輯！您的學號已達畢業年限（預計 {expected_grad} 畢業），無法申請普通學生學期展延。請改為申請『系友卡認證』（學年填999，學期填9）。"
+            )
+    
+    now_dt = datetime.now(timezone.utc)
+    roc_year = now_dt.year - 1911
+    
+    # 學生強校驗：只允許申請當前行政學期之認證；系友特規 academic_year=999, semester=9
     if academic_year != 999 or semester != 9:
-        from datetime import datetime, timezone
-        now_dt = datetime.now(timezone.utc)
-        roc_year = now_dt.year - 1911
-        
-        # 依世新學期行政區間自動判定唯一的合法申報時間 (下學期 2/1~7/31 申報 ROC_year - 1)
         if 2 <= now_dt.month <= 7:
             allowed_year = roc_year - 1
             allowed_semester = 2
@@ -138,71 +160,65 @@ def upload_enrollment_proof(
     filename = file.filename
     ext = os.path.splitext(filename)[1].lower()
     if ext not in [".pdf", ".png", ".jpg", ".jpeg", ".heic"]:
-        raise HTTPException(status_code=400, detail="不支援的檔案格式！僅限上傳 .pdf, .png, .jpg, .jpeg, .heic 格式檔案。")
+        raise HTTPException(status_code=400, detail="不支援的檔案格式！僅限 .pdf, .png, .jpg, .jpeg, .heic 格式。")
         
     import uuid
-    # 4. 上傳實體檔案至 Supabase Storage 雲端空間 (防止 Vercel Serverless 無狀態唯讀檔案系統限制)
     bucket_name = "enrollment-proofs"
-    # 生成帶有隨機短碼的全新檔名，確保每次重新上傳，網址都會完全不同，徹底粉碎瀏覽器快取殘留！
     random_suffix = uuid.uuid4().hex[:8]
     save_filename = f"{user_id}_{academic_year}_{semester}_{random_suffix}{ext}"
     
     try:
-        # 讀取檔案內容為 bytes
         file_content = file.file.read()
-        
-        # 嘗試在 Supabase 中自動建立 enrollment-proofs 公開 bucket
         try:
             supabase.storage.create_bucket(bucket_name, options={"public": True})
         except Exception:
             pass
             
-        # 為了避免 upsert 時發生重名衝突，先進行刪除 (如果存在) 再行上傳
         try:
             supabase.storage.from_(bucket_name).remove([save_filename])
         except Exception:
             pass
             
-        # 執行上傳
         supabase.storage.from_(bucket_name).upload(
             path=save_filename,
             file=file_content,
             file_options={"content-type": file.content_type, "x-upsert": "true"}
         )
         
-        # 🚀 升級方案：取得 10 年超長效 Signed URL，100% 繞過 Storage RLS 權限與 Public 開關不全的存取障礙，保證秒開預覽！
         signed_url_res = supabase.storage.from_(bucket_name).create_signed_url(save_filename, 315360000)
         public_url = signed_url_res.get("signedURL") or signed_url_res.get("signedUrl")
         if not public_url:
-            raise Exception("未能產生有效的 Signed URL，請確認 Storage 權限。")
-        
+            raise Exception("未能產生有效的 Signed URL")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"雲端在學證明儲存失敗，請確認 Supabase Storage 是否配置：{str(e)}")
+        raise HTTPException(status_code=500, detail=f"雲端證明儲存失敗：{str(e)}")
         
-    # 5. 更新 Supabase 資料表，將 URL 指向雲端 Public URL
+    # 🚀 為了解耦管理員後台審核區域：系友申請使用 'Pending_Alumni' 狀態，在校生使用 'Pending'
+    v_status = "Pending_Alumni" if (academic_year == 999 and semester == 9) else "Pending"
+    
     update_data = {
         "enrollment_proof_url": public_url,
         "proof_academic_year": academic_year,
         "proof_semester": semester,
-        "verification_status": "Pending"
+        "verification_status": v_status
     }
     
     try:
         supabase.table("card_profiles").update(update_data).eq("user_id", user_id).execute()
-        return {"message": "在學證明已成功上傳，等待管理員審核！"}
+        return {"message": "認證申請上傳成功，已進入對應的待審核隊列！"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"資料庫更新失敗：{str(e)}")
+
 
 @router.post("/verify-and-extend/{target_user_id}")
 def verify_and_extend_card(
     target_user_id: str,
-    semester: int,  # 1 代表上學期, 2 代表下學期
+    semester: int,  # 1 代表上學期, 2 代表下學期, 9 代表系友終身
     action: str = "approve",  # "approve" 或 "reject"
     current_user: dict = Depends(get_current_user)
 ):
     """
     【活動管理員 Manager / 系統管理員 Admin 可執行】
-    審核在學證明並執行一鍵展延或拒絕退件
+    審核並執行展延，全面防禦選錯或髒資料漏洞
     """
     require_manager_or_admin(current_user.get("role"))
     
@@ -211,42 +227,58 @@ def verify_and_extend_card(
             supabase.table("card_profiles").update({
                 "verification_status": "Rejected"
             }).eq("user_id", target_user_id).execute()
-            return {"message": "已拒絕該在學證明，已將狀態標記為退件。"}
+            return {"message": "已拒絕該申請，狀態已標記為退件。"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"退件操作失敗：{str(e)}")
             
     now = datetime.now(timezone.utc)
+    current_academic_year = get_current_taiwan_academic_year()
     
-    # 計算展延過期時間（上學期有效至隔年 1/31，下學期有效至當年 7/31，若為 9 則為系友卡終身永久開通）
-    if semester == 9:
-        # 🚀 系友終身開通：展延至西元 9999 年底，象徵永久有效
-        valid_date = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
-    elif semester == 1:
-        next_year = now.year + 1 if now.month >= 8 else now.year
-        valid_date = datetime(next_year, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
-    else:
-        valid_date = datetime(now.year, 7, 31, 23, 59, 59, tzinfo=timezone.utc)
+    # 獲取目標用戶目前的資料
+    profile_res = supabase.table("card_profiles").select("*").eq("user_id", target_user_id).execute()
+    if not profile_res.data:
+        raise HTTPException(status_code=404, detail="找不到該用戶的系卡資料")
         
-    update_data = {
-        "valid_until": valid_date.isoformat(),
-        "current_status": "Active",
-        "verification_status": "Approved",
-        "last_verified_at": now.isoformat()
-    }
+    profile_data = profile_res.data[0]
+    expected_grad = profile_data.get("expected_graduation_year", 999)
+    curr_identities = profile_data.get("identities", [])
     
-    # 🚀 若審核核准為系友身份 (semester=9)，確保 identities 陣列中包含 Alumni 並作為其身份組一部分寫回資料庫！
-    if semester == 9:
-        try:
-            profile_res = supabase.table("card_profiles").select("identities").eq("user_id", target_user_id).execute()
-            curr_identities = profile_res.data[0].get("identities", []) if profile_res.data else []
-            # 確保 Alumni 在陣列中
-            new_identities = list(set(curr_identities + ["Alumni"]))
-            update_data["identities"] = new_identities
-        except Exception as e:
-            print(f"自動寫回 Alumni 身份失敗：{e}")
-    
+    # 🚀 終極防禦：不論管理員傳入的 semester 是多少，只要系統檢測到該學號「已達畢業年限」或者是系友核准 (semester=9)
+    # 就一律執行強制轉換：抹除 Student 身份，僅保留 Alumni，狀態改為 Graduated
+    if semester == 9 or expected_grad <= current_academic_year:
+        valid_date = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+        
+        # 徹底替換身份，防止髒資料堆疊
+        new_identities = [i for i in curr_identities if i != "Student"]
+        if "Alumni" not in new_identities:
+            new_identities.append("Alumni")
+            
+        update_data = {
+            "valid_until": valid_date.isoformat(),
+            "current_status": "Graduated",
+            "verification_status": "Approved",
+            "last_verified_at": now.isoformat(),
+            "identities": new_identities
+        }
+        msg = f"審核成功！該學號已過期或符合系友資格，系統已自動將其轉換為「永久系友卡」，並移除學生卡面。"
+    else:
+        # 正常的在校生展延邏輯
+        if semester == 1:
+            next_year = now.year + 1 if now.month >= 8 else now.year
+            valid_date = datetime(next_year, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
+        else:
+            valid_date = datetime(now.year, 7, 31, 23, 59, 59, tzinfo=timezone.utc)
+            
+        update_data = {
+            "valid_until": valid_date.isoformat(),
+            "current_status": "Active",
+            "verification_status": "Approved",
+            "last_verified_at": now.isoformat()
+        }
+        msg = f"審核成功！該學生數位系卡已順利展延至 {valid_date.strftime('%Y-%m-%d')}"
+        
     try:
         supabase.table("card_profiles").update(update_data).eq("user_id", target_user_id).execute()
-        return {"message": f"審核成功！該學生數位系卡已展延至 {valid_date.strftime('%Y-%m-%d')}"}
+        return {"message": msg}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"展延資料庫更新失敗：{str(e)}")
