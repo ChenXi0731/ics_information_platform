@@ -142,7 +142,7 @@ export default function Home() {
                             </h1>
                             <p className="text-morandi-secondary mt-2 text-base max-w-xl">
                                 {hasCard
-                                    ? `身分組別：${profile.identity_type} | 學號/工號：${profile.student_or_staff_id}。`
+                                    ? `身分組別：${profile.identities ? profile.identities.map(id => id === 'Student' ? '學生' : id === 'Alumni' ? '系友' : id === 'Faculty' ? '教職員' : id).join('、') : (profile.identity_type || '無')} | 學號/工號：${profile.student_or_staff_id}。`
                                     : '您目前尚未領取專屬數位系卡。領取系卡後可以進行活動簽到、取得專屬徽章及享有特約商店優惠！'}
                                 {hasCard
                                     ? <br/>
