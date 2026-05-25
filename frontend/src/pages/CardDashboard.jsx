@@ -364,14 +364,18 @@ export default function CardDashboard() {
                                     <span className={`font-bold px-2.5 py-1 rounded-full text-xs shadow-sm ${
                                         profile.verification_status === 'Approved'
                                             ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                                            : profile.verification_status === 'Pending'
+                                            : (profile.verification_status === 'Pending' || profile.verification_status === 'Pending_Alumni')
                                             ? 'bg-amber-50 text-amber-600 border border-amber-200'
-                                            : 'bg-red-50 text-red-600 border border-red-200'
+                                            : profile.verification_status === 'Rejected'
+                                            ? 'bg-red-50 text-red-600 border border-red-200'
+                                            : 'bg-gray-100 text-gray-500 border border-gray-200'
                                     }`}>
                                         {profile.verification_status === 'Approved'
                                             ? (activeIdentity === 'Student' ? '已認證 (有效啟用)' : '已認證 (終身開通)')
+                                            : profile.verification_status === 'Pending_Alumni'
+                                            ? '系友資格審核中 🎓'
                                             : profile.verification_status === 'Pending'
-                                            ? '審核中'
+                                            ? '在學證明審核中'
                                             : profile.verification_status === 'Rejected'
                                             ? '審核未通過 (退件)'
                                             : (activeIdentity === 'Student' ? '卡片已過期' : '系友卡未啟用')}

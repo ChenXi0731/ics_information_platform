@@ -15,6 +15,7 @@ def get_current_taiwan_academic_year() -> int:
     # 依世新大學行政慣例：1月至7月屬於前一年的學年度（例如 2026年5月為 114學年度第2學期）
     return roc_year - 1 if 1 <= now_dt.month <= 7 else roc_year
 
+
 @router.post("/setup", status_code=status.HTTP_201_CREATED)
 def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
@@ -45,7 +46,8 @@ def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_curr
             new_profile["class_generation"] = class_generation
             new_profile["expected_graduation_year"] = expected_graduation_year
             
-            # 🚀 修正邏輯：若預計畢業學年 <= 當前學年度，初始建卡即視為 Alumni，狀態為 Graduated，不允許重疊
+            # 🚀 核心防禦：若學號已超過畢業年限，無論用戶自選「學生」，
+            # 系統一律強制建立 Alumni 卡（只有 Alumni，完全不允許 Student 存在）
             if expected_graduation_year <= current_academic_year:
                 new_profile["identities"] = ["Alumni"]
                 new_profile["current_status"] = "Graduated"
@@ -57,7 +59,26 @@ def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_curr
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"學號自動解析失敗：{str(e)}")
+    elif identity == "Alumni":
+        # 使用者主動選擇系友身份
+        try:
+            from core.utils import parse_student_id_details
+            degree_code, class_generation, expected_graduation_year = parse_student_id_details(raw_data["student_or_staff_id"])
+            new_profile["degree_code"] = degree_code
+            new_profile["class_generation"] = class_generation
+            new_profile["expected_graduation_year"] = expected_graduation_year
+        except Exception:
+            # 系友學號解析失敗不阻擋建卡，使用入學年份推算
+            new_profile["degree_code"] = "A"
+            new_profile["class_generation"] = raw_data["entry_year"]
+            new_profile["expected_graduation_year"] = raw_data["entry_year"] + 4
+        
+        # 系友：永遠只有 Alumni，不允許混入 Student
+        new_profile["identities"] = ["Alumni"]
+        new_profile["current_status"] = "Graduated"
+        new_profile["valid_until"] = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).isoformat()
     else:
+        # Faculty 等其他身份
         new_profile["identities"] = [identity]
         new_profile["degree_code"] = "A"
         new_profile["class_generation"] = raw_data["entry_year"]
@@ -89,16 +110,27 @@ def get_my_card(current_user: dict = Depends(get_current_user)):
     identities = card_data.get("identities", [])
     expected_grad = card_data.get("expected_graduation_year", 999)
     
-    # 🚀 動態修復歷史與髒資料：若已超過預計畢業年度且身分含有 Student，立刻將其「替換」為 Alumni 並移除 Student
-    if "Student" in identities and expected_grad <= current_academic_year:
+    # 🚀 全面資料清洗：確保身份陣列永遠乾淨，防止雙重身份殘留
+    # 規則 1：若身份含有 Student 且學號已超過畢業年限 → 替換為純 Alumni
+    # 規則 2：若身份同時含有 Student 和 Alumni（不論有無超期） → 強制替換為純 Alumni
+    needs_cleanup = False
+    clean_identities = identities[:]
+    
+    has_student = "Student" in identities
+    has_alumni = "Alumni" in identities
+    
+    if has_student and (expected_grad <= current_academic_year or has_alumni):
+        # 清洗：移除 Student，確保 Alumni 存在
         clean_identities = [i for i in identities if i != "Student"]
         if "Alumni" not in clean_identities:
             clean_identities.append("Alumni")
-        
+        needs_cleanup = True
+    
+    if needs_cleanup:
         card_data["identities"] = clean_identities
         card_data["current_status"] = "Graduated"
         
-        # 同步回寫資料庫修正錯誤，達成一勞永逸的資料清洗
+        # 同步回寫資料庫，達成一勞永逸的資料清洗
         try:
             supabase.table("card_profiles").update({
                 "identities": clean_identities,
@@ -209,6 +241,44 @@ def upload_enrollment_proof(
         raise HTTPException(status_code=500, detail=f"資料庫更新失敗：{str(e)}")
 
 
+@router.get("/pending-reviews")
+def get_pending_reviews(current_user: dict = Depends(get_current_user)):
+    """
+    【活動管理員 Manager / 系統管理員 Admin 可執行】
+    獲取所有待審核的申請（學生在校認證 + 系友資格認證）
+    """
+    require_manager_or_admin(current_user.get("role"))
+    
+    try:
+        # 查詢所有待審核記錄（含學生 Pending 和系友 Pending_Alumni）
+        pending_res = supabase.table("card_profiles").select("*").in_(
+            "verification_status", ["Pending", "Pending_Alumni"]
+        ).execute()
+        
+        if not pending_res.data:
+            return {"pending_student": [], "pending_alumni": []}
+        
+        # 獲取這些 user_id 對應的 email
+        user_ids = [p["user_id"] for p in pending_res.data]
+        users_res = supabase.table("users").select("id, email").in_("id", user_ids).execute()
+        user_email_map = {u["id"]: u["email"] for u in (users_res.data or [])}
+        
+        # 為每筆記錄補上 email
+        for p in pending_res.data:
+            p["email"] = user_email_map.get(p["user_id"], "（無法取得信箱）")
+        
+        # 分類：學生待審和系友待審
+        pending_student = [p for p in pending_res.data if p["verification_status"] == "Pending"]
+        pending_alumni = [p for p in pending_res.data if p["verification_status"] == "Pending_Alumni"]
+        
+        return {
+            "pending_student": pending_student,
+            "pending_alumni": pending_alumni
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"獲取待審核列表失敗：{str(e)}")
+
+
 @router.post("/verify-and-extend/{target_user_id}")
 def verify_and_extend_card(
     target_user_id: str,
@@ -243,12 +313,14 @@ def verify_and_extend_card(
     expected_grad = profile_data.get("expected_graduation_year", 999)
     curr_identities = profile_data.get("identities", [])
     
-    # 🚀 終極防禦：不論管理員傳入的 semester 是多少，只要系統檢測到該學號「已達畢業年限」或者是系友核准 (semester=9)
-    # 就一律執行強制轉換：抹除 Student 身份，僅保留 Alumni，狀態改為 Graduated
+    # 🚀 終極防禦：不論管理員傳入的 semester 是多少，只要系統檢測到該學號「已達畢業年限」
+    # 或者是系友核准 (semester=9)，就一律執行強制轉換：
+    # 徹底移除 Student，只保留 Alumni，狀態改為 Graduated
+    # 確保任何情況下都不會產生雙重身份
     if semester == 9 or expected_grad <= current_academic_year:
         valid_date = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
         
-        # 徹底替換身份，防止髒資料堆疊
+        # 徹底替換身份，完全移除 Student，防止髒資料堆疊
         new_identities = [i for i in curr_identities if i != "Student"]
         if "Alumni" not in new_identities:
             new_identities.append("Alumni")
@@ -258,7 +330,7 @@ def verify_and_extend_card(
             "current_status": "Graduated",
             "verification_status": "Approved",
             "last_verified_at": now.isoformat(),
-            "identities": new_identities
+            "identities": new_identities  # 確保是純 Alumni，絕不殘留 Student
         }
         msg = f"審核成功！該學號已過期或符合系友資格，系統已自動將其轉換為「永久系友卡」，並移除學生卡面。"
     else:
