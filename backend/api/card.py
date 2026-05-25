@@ -30,6 +30,10 @@ def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_curr
         "entry_year": raw_data["entry_year"]
     }
     
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    current_academic_year = now.year - 1911 # 轉換為當前民國年份學年度
+    
     if identity == "Student":
         try:
             from core.utils import parse_student_id_details
@@ -38,6 +42,12 @@ def setup_card(profile: CardProfileCreate, current_user: dict = Depends(get_curr
             new_profile["class_generation"] = class_generation
             new_profile["expected_graduation_year"] = expected_graduation_year
             new_profile["current_status"] = "Active"
+            
+            # 🚀 自動畢業與系友判斷：若預計畢業學年 <= 當前學年度，自動追加 Alumni 身份，達成身分重疊！
+            if expected_graduation_year <= current_academic_year:
+                new_profile["identities"] = ["Student", "Alumni"]
+            else:
+                new_profile["identities"] = ["Student"]
         except ValueError as ve:
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
@@ -182,8 +192,11 @@ def verify_and_extend_card(
             
     now = datetime.now(timezone.utc)
     
-    # 計算展延過期時間（上學期有效至隔年 1/31，下學期有效至當年 7/31）
-    if semester == 1:
+    # 計算展延過期時間（上學期有效至隔年 1/31，下學期有效至當年 7/31，若為 9 則為系友卡終身永久開通）
+    if semester == 9:
+        # 🚀 系友終身開通：展延至西元 9999 年底，象徵永久有效
+        valid_date = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    elif semester == 1:
         next_year = now.year + 1 if now.month >= 8 else now.year
         valid_date = datetime(next_year, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
     else:

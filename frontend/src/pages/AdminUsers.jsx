@@ -500,7 +500,8 @@ export default function AdminUsers() {
                     <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-morandi-secondary/15 flex flex-col max-h-[90vh] overflow-y-auto animate-fade-in text-morandi-text">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl sm:text-2xl font-bold text-morandi-primary flex items-center gap-2">
-                                <span>🔍</span>在學證明審核與展延
+                                <span>🔍</span>
+                                {modalTargetUser.card_profile.proof_semester === 9 ? '資傳系友身分審核與開通' : '在學證明審核與展延'}
                             </h3>
                             <button 
                                 onClick={() => setShowExtendModal(false)}
@@ -513,30 +514,40 @@ export default function AdminUsers() {
                         <div className="space-y-5 flex-1">
                             <div className="bg-morandi-bg/60 p-5 rounded-2xl grid grid-cols-2 gap-4 border border-white/40 shadow-sm">
                                 <div>
-                                    <p className="text-[10px] uppercase font-bold text-morandi-secondary">學生姓名</p>
+                                    <p className="text-[10px] uppercase font-bold text-morandi-secondary">
+                                        {modalTargetUser.card_profile.proof_semester === 9 ? '系友姓名' : '學生姓名'}
+                                    </p>
                                     <p className="text-base font-bold text-morandi-primary">{modalTargetUser.card_profile.name}</p>
                                 </div>
                                 <div>
-                                    <p className="text-[10px] uppercase font-bold text-morandi-secondary">學生學號</p>
+                                    <p className="text-[10px] uppercase font-bold text-morandi-secondary">
+                                        {modalTargetUser.card_profile.proof_semester === 9 ? '學號/工號' : '學生學號'}
+                                    </p>
                                     <p className="text-base font-mono font-bold text-morandi-primary">{modalTargetUser.card_profile.student_or_staff_id}</p>
                                 </div>
                                 <div>
                                     <p className="text-[10px] uppercase font-bold text-morandi-secondary">申報學年度</p>
                                     <p className="text-sm font-bold text-morandi-primary">
-                                        {modalTargetUser.card_profile.proof_academic_year ? `民國 ${modalTargetUser.card_profile.proof_academic_year} 年` : '尚未申報'}
+                                        {modalTargetUser.card_profile.proof_academic_year === 999 
+                                            ? '🎓 資傳系友身份' 
+                                            : (modalTargetUser.card_profile.proof_academic_year ? `民國 ${modalTargetUser.card_profile.proof_academic_year} 年` : '尚未申報')}
                                     </p>
                                 </div>
                                 <div>
                                     <p className="text-[10px] uppercase font-bold text-morandi-secondary">申報學期</p>
                                     <p className="text-sm font-bold text-morandi-primary">
-                                        {modalTargetUser.card_profile.proof_semester ? `第 ${modalTargetUser.card_profile.proof_semester} 學期` : '尚未申報'}
+                                        {modalTargetUser.card_profile.proof_semester === 9 
+                                            ? '任意證明文件 (畢業證書/校園照片等)' 
+                                            : (modalTargetUser.card_profile.proof_semester ? `第 ${modalTargetUser.card_profile.proof_semester} 學期` : '尚未申報')}
                                     </p>
                                 </div>
                             </div>
                             
                             {/* 證明文件展示區 */}
                             <div className="border border-morandi-secondary/20 rounded-2xl p-4 bg-morandi-bg/30 flex flex-col items-center shadow-inner">
-                                <p className="text-xs font-bold text-morandi-secondary mb-3">上傳之在學證明檔案預覽</p>
+                                <p className="text-xs font-bold text-morandi-secondary mb-3">
+                                    {modalTargetUser.card_profile.proof_semester === 9 ? '上傳之系友證明檔案預覽' : '上傳之在學證明檔案預覽'}
+                                </p>
                                 {modalTargetUser.card_profile.enrollment_proof_url ? (
                                     (() => {
                                         const fileUrl = getProofUrl(modalTargetUser.card_profile.enrollment_proof_url);
@@ -603,8 +614,15 @@ export default function AdminUsers() {
                                     onChange={(e) => setModalSemester(e.target.value)}
                                     className="w-full px-3 py-2 bg-white border border-morandi-secondary/35 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-morandi-accent shadow-sm"
                                 >
-                                    <option value="1">上學期 (有效期限將展延至隔年 2 月 15 日)</option>
-                                    <option value="2">下學期 (有效期限將展延至當年 9 月 15 日)</option>
+                                    {modalTargetUser.card_profile.proof_semester === 9 ? (
+                                        <option value="9">🎓 系友卡終身開通 (有效期限將展延至永久有效)</option>
+                                    ) : (
+                                        <>
+                                            <option value="1">上學期 (有效期限將展延至隔年 1 月 31 日)</option>
+                                            <option value="2">下學期 (有效期限將展延至當年 7 月 31 日)</option>
+                                            <option value="9">🎓 特別轉換為系友卡終身開通 (永久有效)</option>
+                                        </>
+                                    )}
                                 </select>
                             </div>
                         </div>
@@ -621,7 +639,9 @@ export default function AdminUsers() {
                                                 action: 'approve'
                                             }
                                         });
-                                        alert('🎉 核准審核成功！學生數位系卡已順利展延。');
+                                        alert(modalSemester === '9' 
+                                            ? '🎉 核准審核成功！該系友數位系卡已順利終身永久開通。' 
+                                            : '🎉 核准審核成功！學生數位系卡已順利展延。');
                                         setShowExtendModal(false);
                                         await fetchUsers();
                                     } catch (err) {
@@ -633,7 +653,7 @@ export default function AdminUsers() {
                                 disabled={modalActionLoading}
                                 className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl shadow-md active:scale-95 transition-all text-xs"
                             >
-                                {modalActionLoading ? '處理中...' : '✅ 核准並一鍵展延'}
+                                {modalActionLoading ? '處理中...' : (modalSemester === '9' ? '✅ 核准並一鍵開通終身卡' : '✅ 核准並一鍵展延')}
                             </button>
                             
                             {modalTargetUser.card_profile.enrollment_proof_url && (

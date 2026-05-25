@@ -59,8 +59,9 @@ export default function CardDashboard() {
         setUploadLoading(true);
         const formData = new FormData();
         formData.append('file', proofFile);
-        formData.append('academic_year', uploadYear);
-        formData.append('semester', uploadSemester);
+        // 如果是系友身分認證，自動帶入特規代碼 (999學年與第9學期) 進行雲端永久開通！
+        formData.append('academic_year', activeIdentity === 'Student' ? uploadYear : '999');
+        formData.append('semester', activeIdentity === 'Student' ? uploadSemester : '9');
         
         try {
             await api.post('/card/upload-enrollment-proof', formData, {
@@ -68,7 +69,9 @@ export default function CardDashboard() {
                     'Content-Type': 'multipart/form-data'
                 }
             });
-            alert('🎉 在學證明已成功上傳送審，請等待管理員或活動幹部審核！');
+            alert(activeIdentity === 'Student' 
+                ? '🎉 在學證明已成功上傳送審，請等待管理員或活動幹部審核！'
+                : '🎉 系友證明文件已成功上傳送審，請等待管理員審核以開通終身系卡權限！');
             setProofFile(null);
             
             // 刷新資料
@@ -84,17 +87,30 @@ export default function CardDashboard() {
 
     if (!profile) return <div className="flex justify-center items-center h-screen bg-morandi-bg text-morandi-primary">載入中...</div>;
 
-    // 檢查卡片是否失效 (方案 A 效期攔截或學籍暫停)
+    // 檢查學生身分是否過期 (方案 A 效期攔截)
     const checkIsExpired = () => {
         if (profile.current_status === 'Suspended') return true;
-        if (profile.identities && profile.identities.includes('Student')) {
-            if (!profile.valid_until) return true;
-            const validUntil = new Date(profile.valid_until);
-            return new Date() > validUntil;
-        }
-        return false;
+        if (!profile.valid_until) return true;
+        const validUntil = new Date(profile.valid_until);
+        return new Date() > validUntil;
     };
     const isExpired = checkIsExpired();
+
+    // 🚀 全方位身分有效性檢測：區分 Student 在學效期與 Alumni 系友審核狀態
+    const checkCardValidity = () => {
+        if (profile.current_status === 'Suspended') return false;
+        
+        if (activeIdentity === 'Student') {
+            return !isExpired;
+        }
+        if (activeIdentity === 'Alumni') {
+            // 系友卡：必須是經過管理員審核通過 (Approved) 才是啟用狀態
+            return profile.verification_status === 'Approved';
+        }
+        // 教職員等其他身分預設一律有效
+        return true;
+    };
+    const isCardValid = checkCardValidity();
 
     const getThemeColor = () => {
         switch (activeIdentity) {
@@ -191,10 +207,10 @@ export default function CardDashboard() {
                             /* --- 教職員版本 Front --- */
                             <div className={`absolute inset-0 backface-hidden rounded-3xl shadow-2xl p-8 text-white flex flex-col justify-between overflow-hidden ${getThemeColor()}`}>
                                 {/* 失效半透明磨砂浮水印 */}
-                                {isExpired && (
+                                {!isCardValid && (
                                     <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px] rounded-3xl z-40 flex items-center justify-center pointer-events-none border-2 border-red-500/30">
                                         <div className="border-4 border-red-500 text-red-500 font-extrabold text-2xl lg:text-3xl px-6 py-2.5 rounded-2xl transform -rotate-12 tracking-widest animate-pulse shadow-lg bg-black/70">
-                                            已失效 / EXPIRED
+                                            {activeIdentity === 'Alumni' ? '未啟用 / INACTIVE' : '已失效 / EXPIRED'}
                                         </div>
                                     </div>
                                 )}
@@ -234,10 +250,10 @@ export default function CardDashboard() {
                             /* --- 學生/系友版本 Front --- */
                             <div className={`absolute inset-0 backface-hidden rounded-3xl shadow-2xl p-8 text-white flex flex-col justify-between overflow-hidden ${getThemeColor()}`}>
                                 {/* 失效半透明磨砂浮水印 */}
-                                {isExpired && (
+                                {!isCardValid && (
                                     <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px] rounded-3xl z-40 flex items-center justify-center pointer-events-none border-2 border-red-500/30">
                                         <div className="border-4 border-red-500 text-red-500 font-extrabold text-2xl lg:text-3xl px-6 py-2.5 rounded-2xl transform -rotate-12 tracking-widest animate-pulse shadow-lg bg-black/70">
-                                            已失效 / EXPIRED
+                                            {activeIdentity === 'Alumni' ? '未啟用 / INACTIVE' : '已失效 / EXPIRED'}
                                         </div>
                                     </div>
                                 )}
@@ -278,10 +294,10 @@ export default function CardDashboard() {
                         {/* --- 卡片背面 (QR Code 簽到) --- */}
                         <div className="absolute inset-0 backface-hidden rounded-3xl shadow-xl p-6 bg-morandi-surface border-[3px] border-morandi-bg flex flex-col items-center justify-center rotate-y-180 overflow-hidden">
                             {/* 失效半透明磨砂浮水印 (背面同樣覆蓋) */}
-                            {isExpired && (
+                            {!isCardValid && (
                                 <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px] rounded-3xl z-40 flex items-center justify-center pointer-events-none border-2 border-red-500/30">
                                     <div className="border-4 border-red-500 text-red-500 font-extrabold text-2xl lg:text-3xl px-6 py-2.5 rounded-2xl transform -rotate-12 tracking-widest animate-pulse shadow-lg bg-black/70">
-                                        已失效 / EXPIRED
+                                        {activeIdentity === 'Alumni' ? '未啟用 / INACTIVE' : '已失效 / EXPIRED'}
                                     </div>
                                 </div>
                             )}
@@ -289,11 +305,15 @@ export default function CardDashboard() {
                             <p className="text-morandi-secondary text-xs mb-4 font-bold tracking-widest uppercase">Activity Check-in / Cooperative Stores</p>
                             
                             {/* 特約商店防禦：失效時隱藏並鎖定 QR Code */}
-                            {isExpired ? (
-                                <div className="flex flex-col items-center justify-center py-6 text-center text-red-500">
+                            {!isCardValid ? (
+                                <div className="flex flex-col items-center justify-center py-6 text-center text-red-500 animate-fade-in">
                                     <span className="text-5xl mb-3">🔒</span>
-                                    <p className="font-bold text-sm text-morandi-primary">卡片已失效，QR Code 簽到已鎖定</p>
-                                    <p className="text-xs text-red-400 mt-1.5 max-w-[15rem] leading-relaxed">請完成當學期在校認證以重啟特約商店與簽到功能</p>
+                                    <p className="font-bold text-sm text-morandi-primary">
+                                        {activeIdentity === 'Alumni' ? '系友卡未啟用，QR Code 簽到已鎖定' : '卡片已失效，QR Code 簽到已鎖定'}
+                                    </p>
+                                    <p className="text-xs text-red-400 mt-1.5 max-w-[15rem] leading-relaxed">
+                                        {activeIdentity === 'Alumni' ? '請上傳您的系友身分證明文件，經審核通過後即可永久開通！' : '請完成當學期在校認證以重啟特約商店與簽到功能'}
+                                    </p>
                                 </div>
                             ) : (
                                 <div className="bg-white p-3 rounded-2xl shadow-sm border border-morandi-bg">
@@ -308,34 +328,35 @@ export default function CardDashboard() {
                 {/* 右側徽章與在校認證上傳區塊 */}
                 <div className="w-full max-w-[22rem] lg:max-w-md lg:mt-0 flex-1 flex flex-col gap-6">
                     {/* 學生在校認證上傳送審區塊 */}
-                    {profile.identities?.includes('Student') && (
-                        <div className="glass rounded-3xl p-6 lg:p-8">
+                    {/* 學生/系友認證上傳送審區塊 */}
+                    {(activeIdentity === 'Student' || activeIdentity === 'Alumni') && (
+                        <div className="glass rounded-3xl p-6 lg:p-8 animate-fade-in">
                             <h3 className="text-xl font-bold text-morandi-primary mb-4 flex items-center gap-1.5">
-                                <span className="text-2xl">🎒</span>
-                                在校認證與效期延展
+                                <span className="text-2xl">{activeIdentity === 'Student' ? '🎒' : '🎓'}</span>
+                                {activeIdentity === 'Student' ? '在校認證與效期延展' : '資傳系友身份驗證'}
                             </h3>
                             
                             <div className="flex flex-col gap-3.5 text-sm">
                                 <div className="bg-morandi-bg/60 px-4 py-3 rounded-2xl flex justify-between items-center border border-white/40 shadow-sm">
                                     <span className="text-xs font-semibold text-morandi-secondary">認證狀態</span>
                                     <span className={`font-bold px-2.5 py-1 rounded-full text-xs shadow-sm ${
-                                        profile.verification_status === 'Approved' && !isExpired
+                                        profile.verification_status === 'Approved'
                                             ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
                                             : profile.verification_status === 'Pending'
                                             ? 'bg-amber-50 text-amber-600 border border-amber-200'
                                             : 'bg-red-50 text-red-600 border border-red-200'
                                     }`}>
-                                        {profile.verification_status === 'Approved' && !isExpired
-                                            ? '已認證 (有效啟用)'
+                                        {profile.verification_status === 'Approved'
+                                            ? (activeIdentity === 'Student' ? '已認證 (有效啟用)' : '已認證 (終身開通)')
                                             : profile.verification_status === 'Pending'
                                             ? '審核中'
                                             : profile.verification_status === 'Rejected'
                                             ? '審核未通過 (退件)'
-                                            : '卡片已過期'}
+                                            : (activeIdentity === 'Student' ? '卡片已過期' : '系友卡未啟用')}
                                     </span>
                                 </div>
                                 
-                                {profile.valid_until && (
+                                {activeIdentity === 'Student' && profile.valid_until && (
                                     <div className="bg-morandi-bg/60 px-4 py-3 rounded-2xl flex justify-between items-center border border-white/40 shadow-sm">
                                         <span className="text-xs font-semibold text-morandi-secondary">當期效期至</span>
                                         <span className="font-mono font-bold text-morandi-primary">
@@ -343,37 +364,51 @@ export default function CardDashboard() {
                                         </span>
                                     </div>
                                 )}
+
+                                {activeIdentity === 'Alumni' && profile.verification_status === 'Approved' && (
+                                    <div className="bg-morandi-bg/60 px-4 py-3 rounded-2xl flex justify-between items-center border border-white/40 shadow-sm">
+                                        <span className="text-xs font-semibold text-morandi-secondary">卡片效期</span>
+                                        <span className="font-bold text-emerald-600">
+                                            終身永久有效 (無須展延)
+                                        </span>
+                                    </div>
+                                )}
                                 
                                 {/* 僅在未認證、已過期、或被退件時顯示上傳區 */}
-                                {(isExpired || profile.verification_status === 'Rejected' || !profile.valid_until) && (
-                                    <div className="mt-2 border border-dashed border-morandi-primary/25 rounded-2xl p-4 bg-white/30 backdrop-blur-sm">
+                                {((activeIdentity === 'Student' && (isExpired || profile.verification_status === 'Rejected' || !profile.valid_until)) ||
+                                  (activeIdentity === 'Alumni' && profile.verification_status !== 'Approved')) && (
+                                    <div className="mt-2 border border-dashed border-morandi-primary/25 rounded-2xl p-4 bg-white/30 backdrop-blur-sm animate-fade-in">
                                         <p className="text-[11px] text-morandi-secondary mb-3 leading-relaxed">
-                                            請選取您的學年與學期，並上傳本學期世新大學在學證明 (支援格式: PDF, PNG, JPG, JPEG, HEIC)。
+                                            {activeIdentity === 'Student'
+                                                ? '請選取您的學年與學期，並上傳本學期世新大學在學證明 (支援格式: PDF, PNG, JPG, JPEG, HEIC)。'
+                                                : '請上傳您的系友身分證明文件 (如: 過去的在學證明、在校照片、畢業證書等，支援格式: PDF, PNG, JPG, JPEG, HEIC) 以開通系友卡終身使用權限！'}
                                         </p>
                                         
-                                        <div className="grid grid-cols-2 gap-3 mb-3">
-                                            <div>
-                                                <label className="block text-[10px] font-bold text-morandi-secondary mb-1">學年度 (民國)</label>
-                                                <input
-                                                    type="number"
-                                                    value={uploadYear}
-                                                    onChange={(e) => setUploadYear(e.target.value)}
-                                                    className="w-full px-2.5 py-1.5 text-xs bg-white/70 border border-morandi-secondary/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-morandi-accent shadow-sm"
-                                                    placeholder="e.g. 111"
-                                                />
+                                        {activeIdentity === 'Student' && (
+                                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-morandi-secondary mb-1">學年度 (民國)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={uploadYear}
+                                                        onChange={(e) => setUploadYear(e.target.value)}
+                                                        className="w-full px-2.5 py-1.5 text-xs bg-white/70 border border-morandi-secondary/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-morandi-accent shadow-sm"
+                                                        placeholder="e.g. 111"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-morandi-secondary mb-1">學期</label>
+                                                    <select
+                                                        value={uploadSemester}
+                                                        onChange={(e) => setUploadSemester(e.target.value)}
+                                                        className="w-full px-2.5 py-1.5 text-xs bg-white/70 border border-morandi-secondary/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-morandi-accent shadow-sm font-semibold"
+                                                    >
+                                                        <option value="1">上學期</option>
+                                                        <option value="2">下學期</option>
+                                                    </select>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-[10px] font-bold text-morandi-secondary mb-1">學期</label>
-                                                <select
-                                                    value={uploadSemester}
-                                                    onChange={(e) => setUploadSemester(e.target.value)}
-                                                    className="w-full px-2.5 py-1.5 text-xs bg-white/70 border border-morandi-secondary/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-morandi-accent shadow-sm font-semibold"
-                                                >
-                                                    <option value="1">上學期</option>
-                                                    <option value="2">下學期</option>
-                                                </select>
-                                            </div>
-                                        </div>
+                                        )}
                                         
                                         <input
                                             type="file"
@@ -388,7 +423,7 @@ export default function CardDashboard() {
                                             onClick={() => document.getElementById('enrollment-proof-input').click()}
                                             className="w-full px-4 py-2 border-2 border-morandi-accent/35 text-morandi-accent rounded-xl text-xs font-bold hover:bg-morandi-accent/5 active:scale-95 transition-all mb-2 shadow-sm bg-white/60"
                                         >
-                                            {proofFile ? `📎 ${proofFile.name.substring(0, 18)}` : '📂 選擇在學證明檔案'}
+                                            {proofFile ? `📎 ${proofFile.name.substring(0, 18)}` : (activeIdentity === 'Student' ? '📂 選擇在學證明檔案' : '📂 選擇系友證明檔案')}
                                         </button>
                                         
                                         {proofFile && (
@@ -398,7 +433,7 @@ export default function CardDashboard() {
                                                 disabled={uploadLoading}
                                                 className="w-full px-4 py-2.5 bg-morandi-accent text-white rounded-xl text-xs font-bold hover:bg-opacity-90 active:scale-95 transition-all shadow-md mt-1"
                                             >
-                                                {uploadLoading ? '檔案上傳送審中...' : '🚀 送出在學證明審核'}
+                                                {uploadLoading ? '檔案上傳送審中...' : '🚀 送出證明檔案審核'}
                                             </button>
                                         )}
                                     </div>
